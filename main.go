@@ -70,6 +70,10 @@ Loop:
 				} else {
 					fmt.Println("Usage: get <key>")
 				}
+			case "delete":
+				if len(command) == 2 {
+					deleteKeyValuePair(command[1])
+				}
 			case "create":
 				create(node)
 			}
@@ -90,7 +94,16 @@ func (n *Node) Put(input *KeyValuePair, junk *Nothing) error {
 }
 
 func (n *Node) Get(key string, value *string) error {
-	*value = n.bucket[key]
+	if val, exists := n.bucket[key]; exists {
+		*value = val
+	}
+	return nil
+}
+
+func (n *Node) Delete(key string, junk *Nothing) error {
+	if _, exists := n.bucket[key]; exists {
+		delete(n.bucket, key)
+	}
 	return nil
 }
 
@@ -185,12 +198,21 @@ func put(key, value string) {
 }
 
 func get(key string) {
-	fmt.Printf("trying to retrieve %s from the server\n", key)
+	fmt.Printf("Retrieving %s from the server\n", key)
 
 	var value string
 	if err := call("localhost:3410", "Node.Get", key, &value); err != nil {
-		log.Fatalf("Error in 'call' function in the 'get' command: %v", err)
+		log.Fatalf("Error retrieving %s: %v", key, err)
 	}
 
 	fmt.Println(value)
+}
+
+func deleteKeyValuePair(key string) {
+	fmt.Printf("Deleting %s from the server\n", key)
+
+	var junk Nothing
+	if err := call("localhost:3410", "Node.Delete", key, &junk); err != nil {
+		log.Fatalf("Error deleting %s: %v", key, err)
+	}
 }
