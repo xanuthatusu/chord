@@ -61,6 +61,14 @@ Loop:
 			case "put":
 				if len(command) == 3 {
 					put(command[1], command[2])
+				} else {
+					fmt.Println("Usage: put <key> <value>")
+				}
+			case "get":
+				if len(command) == 2 {
+					get(command[1])
+				} else {
+					fmt.Println("Usage: get <key>")
 				}
 			case "create":
 				create(node)
@@ -69,7 +77,7 @@ Loop:
 	}
 }
 
-func (n *Node) Ping(junk Nothing, reply *interface{}) error {
+func (n *Node) Ping(junk Nothing, reply *string) error {
 	fmt.Println("I've been pinged!")
 	*reply = "pong!"
 	return nil
@@ -77,6 +85,12 @@ func (n *Node) Ping(junk Nothing, reply *interface{}) error {
 
 func (n *Node) Put(input *KeyValuePair, junk *Nothing) error {
 	fmt.Println(input.Key, input.Value)
+	n.bucket[input.Key] = input.Value
+	return nil
+}
+
+func (n *Node) Get(key string, value *string) error {
+	*value = n.bucket[key]
 	return nil
 }
 
@@ -152,7 +166,7 @@ func call(address string, method string, request interface{}, reply interface{})
 func ping() {
 	fmt.Println("Pinging localhost:3410")
 	var junk Nothing
-	var returnValue interface{}
+	var returnValue string
 	if err := call("localhost:3410", "Node.Ping", junk, &returnValue); err != nil {
 		log.Fatalf("Error in 'call' function: %v", err)
 	}
@@ -163,11 +177,8 @@ func put(key, value string) {
 	fmt.Printf("Putting key/value pair with key: %s and value %s into the server\n", key, value)
 
 	inputs := KeyValuePair{key, value}
-	// var inputs struct{ Key, Value string }
-	// inputs.Key = key
-	// inputs.Value = value
-
 	var junk *Nothing
+
 	if err := call("localhost:3410", "Node.Put", inputs, &junk); err != nil {
 		log.Fatalf("Error in 'call' function in the 'put' command: %v", err)
 	}
@@ -175,4 +186,11 @@ func put(key, value string) {
 
 func get(key string) {
 	fmt.Printf("trying to retrieve %s from the server\n", key)
+
+	var value string
+	if err := call("localhost:3410", "Node.Get", key, &value); err != nil {
+		log.Fatalf("Error in 'call' function in the 'get' command: %v", err)
+	}
+
+	fmt.Println(value)
 }
