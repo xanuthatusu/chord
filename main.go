@@ -36,6 +36,7 @@ func loop() {
 	node := new(Node)
 	node.bucket = make(map[string]string)
 	node.port = 3410
+	// port := 3410
 
 	scanner := bufio.NewScanner(os.Stdin)
 Loop:
@@ -74,8 +75,10 @@ Loop:
 				if len(command) == 2 {
 					deleteKeyValuePair(command[1])
 				}
+			case "dump":
+				dump(node)
 			case "create":
-				create(node)
+				go create(node)
 			}
 		}
 	}
@@ -111,7 +114,7 @@ func printHelp() {
 	fmt.Println("\nUsage:")
 	fmt.Println("\tport <number>\tset port to <number>")
 	fmt.Println("\tquit\t\tclose the service")
-	fmt.Println("\thelp\t\tprint this message\n")
+	fmt.Printf("\thelp\t\tprint this message\n\n")
 }
 
 func getLocalAddress() string {
@@ -151,6 +154,10 @@ func getLocalAddress() string {
 func create(node *Node) {
 	fmt.Println("Creating a new node instance!")
 
+	// node := new(Node)
+	// node.bucket = make(map[string]string)
+	// node.port = port
+
 	rpc.Register(node)
 	rpc.HandleHTTP()
 	l, e := net.Listen("tcp", "localhost:"+strconv.Itoa(node.port))
@@ -184,6 +191,14 @@ func ping() {
 		log.Fatalf("Error in 'call' function: %v", err)
 	}
 	fmt.Println(returnValue)
+}
+
+func dump(node *Node) {
+	if node != nil {
+		for key, value := range node.bucket {
+			fmt.Println("Key: ", key, "Value: ", value)
+		}
+	}
 }
 
 func put(key, value string) {
