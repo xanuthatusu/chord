@@ -17,8 +17,10 @@ const (
 )
 
 type Node struct {
-	port   int
-	bucket map[string]string
+	port        int
+	bucket      map[string]string
+	successor   string
+	predecessor string
 }
 
 type Nothing struct{}
@@ -36,7 +38,6 @@ func loop() {
 	node := new(Node)
 	node.bucket = make(map[string]string)
 	node.port = 3410
-	// port := 3410
 
 	scanner := bufio.NewScanner(os.Stdin)
 Loop:
@@ -76,36 +77,40 @@ Loop:
 					deleteKeyValuePair(command[1])
 				}
 			case "dump":
-				dump(node)
+				node.dump()
 			case "create":
-				go create(node)
+				go node.create()
+			case "join":
+				if len(command) == 2 {
+					node.join(command[1])
+				}
 			}
 		}
 	}
 }
 
-func (n *Node) Ping(junk Nothing, reply *string) error {
+func (node *Node) Ping(junk Nothing, reply *string) error {
 	fmt.Println("I've been pinged!")
 	*reply = "pong!"
 	return nil
 }
 
-func (n *Node) Put(input *KeyValuePair, junk *Nothing) error {
+func (node *Node) Put(input *KeyValuePair, junk *Nothing) error {
 	fmt.Println(input.Key, input.Value)
-	n.bucket[input.Key] = input.Value
+	node.bucket[input.Key] = input.Value
 	return nil
 }
 
-func (n *Node) Get(key string, value *string) error {
-	if val, exists := n.bucket[key]; exists {
+func (node *Node) Get(key string, value *string) error {
+	if val, exists := node.bucket[key]; exists {
 		*value = val
 	}
 	return nil
 }
 
-func (n *Node) Delete(key string, junk *Nothing) error {
-	if _, exists := n.bucket[key]; exists {
-		delete(n.bucket, key)
+func (node *Node) Delete(key string, junk *Nothing) error {
+	if _, exists := node.bucket[key]; exists {
+		delete(node.bucket, key)
 	}
 	return nil
 }
@@ -151,12 +156,8 @@ func getLocalAddress() string {
 	return localaddress
 }
 
-func create(node *Node) {
+func (node *Node) create() {
 	fmt.Println("Creating a new node instance!")
-
-	// node := new(Node)
-	// node.bucket = make(map[string]string)
-	// node.port = port
 
 	rpc.Register(node)
 	rpc.HandleHTTP()
@@ -167,6 +168,10 @@ func create(node *Node) {
 	if err := http.Serve(l, nil); err != nil {
 		log.Fatalf("http.Serve %v", err)
 	}
+}
+
+func (node *Node) join(address string) {
+	node.successor = address
 }
 
 func call(address string, method string, request interface{}, reply interface{}) error {
@@ -193,12 +198,16 @@ func ping() {
 	fmt.Println(returnValue)
 }
 
-func dump(node *Node) {
+func (node *Node) dump() {
+	fmt.Println("Table Data:")
 	if node != nil {
 		for key, value := range node.bucket {
 			fmt.Println("Key: ", key, "Value: ", value)
 		}
 	}
+
+	fmt.Println("Successor: ", node.successor)
+	fmt.Println("Predecessor: ", node.predecessor)
 }
 
 func put(key, value string) {
