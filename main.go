@@ -16,6 +16,7 @@ const (
 	successorListSize = 3
 )
 
+// Node : A node for the chord system
 type Node struct {
 	port        int
 	bucket      map[string]string
@@ -23,8 +24,10 @@ type Node struct {
 	predecessor string
 }
 
+// Nothing : an empty struct used for readability
 type Nothing struct{}
 
+// KeyValuePair : a struct containing a key and a value
 type KeyValuePair struct {
 	Key   string
 	Value string
@@ -89,18 +92,21 @@ Loop:
 	}
 }
 
+// Ping : Reply with 'pong!'
 func (node *Node) Ping(junk Nothing, reply *string) error {
 	fmt.Println("I've been pinged!")
 	*reply = "pong!"
 	return nil
 }
 
+// Put : Create or update a key/value pair in the bucket
 func (node *Node) Put(input *KeyValuePair, junk *Nothing) error {
 	fmt.Println(input.Key, input.Value)
 	node.bucket[input.Key] = input.Value
 	return nil
 }
 
+// Get : Retrieve a key/value pair from the bucket
 func (node *Node) Get(key string, value *string) error {
 	if val, exists := node.bucket[key]; exists {
 		*value = val
@@ -108,6 +114,7 @@ func (node *Node) Get(key string, value *string) error {
 	return nil
 }
 
+// Delete : Remove a key/value pair from the bucket
 func (node *Node) Delete(key string, junk *Nothing) error {
 	if _, exists := node.bucket[key]; exists {
 		delete(node.bucket, key)
