@@ -77,13 +77,13 @@ Loop:
 				ping()
 			case "put":
 				if len(command) == 3 {
-					put(command[1], command[2], node)
+					put(command[1], command[2], node.successor)
 				} else {
 					fmt.Println("Usage: put <key> <value>")
 				}
 			case "get":
 				if len(command) == 2 {
-					get(command[1])
+					get(command[1], node.successor, node.bucket)
 				} else {
 					fmt.Println("Usage: get <key>")
 				}
@@ -113,10 +113,9 @@ func (node *Node) Ping(junk Nothing, reply *string) error {
 
 // Put : Create or update a key/value pair in the bucket
 func (node *Node) Put(input *KeyValuePair, junk *Nothing) error {
-	fmt.Println(input.Key, input.Value)
 	keyHash := hashString(input.Key)
 	successorIdentifier := hashString(node.successor)
-	if keyHash.Cmp(successorIdentifier) <= 0 {
+	if node.identifier.Cmp(keyHash) >= 0 || successorIdentifier.Cmp(keyHash) < 0 {
 		node.bucket[input.Key] = input.Value
 	} else {
 		call(node.successor, "Node.Put", input, junk)
@@ -128,6 +127,8 @@ func (node *Node) Put(input *KeyValuePair, junk *Nothing) error {
 func (node *Node) Get(key string, value *string) error {
 	if val, exists := node.bucket[key]; exists {
 		*value = val
+	} else if node.identifier.Cmp(hashString(key)) < 0 && hashString(node.successor).Cmp(hashString(key)) >= 0 {
+		call(node.successor, "Node.Get", key, value)
 	}
 	return nil
 }
@@ -226,7 +227,6 @@ func ping() {
 func (node *Node) join(address string) {
 	node.successor = address
 	go node.create()
-	node.dump()
 }
 
 func (node *Node) dump() {
@@ -288,22 +288,23 @@ func (node *Node) Notify(predecessorAddress string, junk *Nothing) error {
 	return nil
 }
 
-func put(key, value string, node *Node) {
+func put(key, value, address string) {
 	fmt.Printf("Putting key/value pair with key: %s and value %s into the server\n", key, value)
 
 	inputs := KeyValuePair{key, value}
 	var junk *Nothing
 
-	call(node.successor, "Node.Put", inputs, &junk)
+	call(address, "Node.Put", inputs, &junk)
 }
 
-func get(key string) {
-	fmt.Printf("Retrieving %s from the server\n", key)
+func get(key, address string, bucket map[string]string) {
+	if value, exists := bucket[key]; exists {
+		fmt.Println(value)
+	} else {
+		call(address, "Node.Get", key, &value)
 
-	var value string
-	call("localhost:3410", "Node.Get", key, &value)
-
-	fmt.Println(value)
+		fmt.Println(value)
+	}
 }
 
 func deleteKeyValuePair(key string) {
