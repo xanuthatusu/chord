@@ -77,7 +77,7 @@ Loop:
 				ping()
 			case "put":
 				if len(command) == 3 {
-					put(command[1], command[2])
+					put(command[1], command[2], node)
 				} else {
 					fmt.Println("Usage: put <key> <value>")
 				}
@@ -114,7 +114,13 @@ func (node *Node) Ping(junk Nothing, reply *string) error {
 // Put : Create or update a key/value pair in the bucket
 func (node *Node) Put(input *KeyValuePair, junk *Nothing) error {
 	fmt.Println(input.Key, input.Value)
-	node.bucket[input.Key] = input.Value
+	keyHash := hashString(input.Key)
+	successorIdentifier := hashString(node.successor)
+	if keyHash.Cmp(successorIdentifier) <= 0 {
+		node.bucket[input.Key] = input.Value
+	} else {
+		call(node.successor, "Node.Put", input, junk)
+	}
 	return nil
 }
 
@@ -196,7 +202,6 @@ func (node *Node) create() {
 }
 
 func call(address string, method string, request interface{}, reply interface{}) error {
-	fmt.Println("address for ", method, ": ", address)
 	client, err := rpc.DialHTTP("tcp", address)
 	if err != nil {
 		log.Fatalf("rpc.DialHTTP: %v", err)
@@ -253,7 +258,7 @@ func (node *Node) stabilize() {
 	for {
 		if node.successor != "" {
 			call(node.successor, "Node.GetPredecessor", junk, &successorPredecessorAddress)
-			if successorPredecessorAddress != "" && node.identifier.Cmp(hashString(successorPredecessorAddress)) < 0 {
+			if successorPredecessorAddress != "" && node.identifier.Cmp(hashString(successorPredecessorAddress)) != 0 {
 				node.successor = successorPredecessorAddress
 			}
 			call(node.successor, "Node.Notify", node.address, &junk)
@@ -275,19 +280,21 @@ func (node *Node) GetPredecessor(junk Nothing, predecessorAddress *string) error
 
 // Notify : Inform a node about a change in it's predecessor
 func (node *Node) Notify(predecessorAddress string, junk *Nothing) error {
-	if node.predecessor == "" || node.identifier.Cmp(hashString(predecessorAddress)) <= 0 {
+	if node.predecessor == "" || hashString(node.predecessor).Cmp(hashString(predecessorAddress)) <= 0 && predecessorAddress != "" {
 		node.predecessor = predecessorAddress
+	} else if predecessorAddress != "" {
+		node.successor = predecessorAddress
 	}
 	return nil
 }
 
-func put(key, value string) {
+func put(key, value string, node *Node) {
 	fmt.Printf("Putting key/value pair with key: %s and value %s into the server\n", key, value)
 
 	inputs := KeyValuePair{key, value}
 	var junk *Nothing
 
-	call("localhost:3410", "Node.Put", inputs, &junk)
+	call(node.successor, "Node.Put", inputs, &junk)
 }
 
 func get(key string) {
