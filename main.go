@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha1"
 	"fmt"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -24,6 +26,7 @@ type Node struct {
 	successor   string
 	predecessor string
 	address     string
+	identifier  *big.Int
 }
 
 // Nothing : an empty struct used for readability
@@ -44,6 +47,7 @@ func loop() {
 	node.bucket = make(map[string]string)
 	node.port = 3410
 	node.address = getLocalAddress() + ":" + strconv.Itoa(node.port)
+	node.identifier = hashString(node.address)
 
 	go node.stabilize()
 
@@ -59,6 +63,8 @@ Loop:
 				if err == nil {
 					node.port = i
 					node.address = getLocalAddress() + ":" + strconv.Itoa(node.port)
+					node.identifier = hashString(node.address)
+
 					fmt.Println("Port has been set to", node.port)
 				}
 
@@ -135,6 +141,12 @@ func printHelp() {
 	fmt.Printf("\thelp\t\tprint this message\n\n")
 }
 
+func hashString(elt string) *big.Int {
+	hasher := sha1.New()
+	hasher.Write([]byte(elt))
+	return new(big.Int).SetBytes(hasher.Sum(nil))
+}
+
 func getLocalAddress() string {
 	var localaddress string
 
@@ -166,9 +178,6 @@ func getLocalAddress() string {
 		panic("init: failed to find non-loopback interface with valid address on this node")
 	}
 
-	// for some reason, rpc gets a 'connection refused' error on anything but 'localhost'
-	localaddress = "localhost"
-
 	return localaddress
 }
 
@@ -177,7 +186,7 @@ func (node *Node) create() {
 
 	rpc.Register(node)
 	rpc.HandleHTTP()
-	l, e := net.Listen("tcp", "localhost:"+strconv.Itoa(node.port))
+	l, e := net.Listen("tcp", ":"+strconv.Itoa(node.port))
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}
@@ -187,6 +196,7 @@ func (node *Node) create() {
 }
 
 func call(address string, method string, request interface{}, reply interface{}) error {
+	fmt.Println("address for ", method, ": ", address)
 	client, err := rpc.DialHTTP("tcp", address)
 	if err != nil {
 		log.Fatalf("rpc.DialHTTP: %v", err)
@@ -233,6 +243,8 @@ func (node *Node) dump() {
 	} else {
 		fmt.Println("Predecessor: <nil>")
 	}
+
+	fmt.Println("\nIdentifier: ", node.identifier)
 }
 
 func (node *Node) stabilize() {
@@ -241,7 +253,7 @@ func (node *Node) stabilize() {
 	for {
 		if node.successor != "" {
 			call(node.successor, "Node.GetPredecessor", junk, &successorPredecessorAddress)
-			if successorPredecessorAddress > node.address {
+			if successorPredecessorAddress != "" && node.identifier.Cmp(hashString(successorPredecessorAddress)) < 0 {
 				node.successor = successorPredecessorAddress
 			}
 			call(node.successor, "Node.Notify", node.address, &junk)
@@ -263,7 +275,7 @@ func (node *Node) GetPredecessor(junk Nothing, predecessorAddress *string) error
 
 // Notify : Inform a node about a change in it's predecessor
 func (node *Node) Notify(predecessorAddress string, junk *Nothing) error {
-	if node.predecessor == "" || predecessorAddress >= node.predecessor {
+	if node.predecessor == "" || node.identifier.Cmp(hashString(predecessorAddress)) <= 0 {
 		node.predecessor = predecessorAddress
 	}
 	return nil
