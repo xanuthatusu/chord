@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -22,6 +23,7 @@ type Node struct {
 	bucket      map[string]string
 	successor   string
 	predecessor string
+	address     string
 }
 
 // Nothing : an empty struct used for readability
@@ -41,6 +43,9 @@ func loop() {
 	node := new(Node)
 	node.bucket = make(map[string]string)
 	node.port = 3410
+	node.address = getLocalAddress() + ":" + strconv.Itoa(node.port)
+
+	go node.stabilize()
 
 	scanner := bufio.NewScanner(os.Stdin)
 Loop:
@@ -53,6 +58,7 @@ Loop:
 				i, err := strconv.Atoi(command[1])
 				if err == nil {
 					node.port = i
+					node.address = getLocalAddress() + ":" + strconv.Itoa(node.port)
 					fmt.Println("Port has been set to", node.port)
 				}
 
@@ -160,6 +166,9 @@ func getLocalAddress() string {
 		panic("init: failed to find non-loopback interface with valid address on this node")
 	}
 
+	// for some reason, rpc gets a 'connection refused' error on anything but 'localhost'
+	localaddress = "localhost"
+
 	return localaddress
 }
 
@@ -175,10 +184,6 @@ func (node *Node) create() {
 	if err := http.Serve(l, nil); err != nil {
 		log.Fatalf("http.Serve %v", err)
 	}
-}
-
-func (node *Node) join(address string) {
-	node.successor = address
 }
 
 func call(address string, method string, request interface{}, reply interface{}) error {
@@ -199,10 +204,14 @@ func ping() {
 	fmt.Println("Pinging localhost:3410")
 	var junk Nothing
 	var returnValue string
-	if err := call("localhost:3410", "Node.Ping", junk, &returnValue); err != nil {
-		log.Fatalf("Error in 'call' function: %v", err)
-	}
+	call("localhost:3410", "Node.Ping", junk, &returnValue)
 	fmt.Println(returnValue)
+}
+
+func (node *Node) join(address string) {
+	node.successor = address
+	go node.create()
+	node.dump()
 }
 
 func (node *Node) dump() {
@@ -213,8 +222,51 @@ func (node *Node) dump() {
 		}
 	}
 
-	fmt.Println("Successor: ", node.successor)
-	fmt.Println("Predecessor: ", node.predecessor)
+	if node.successor != "" {
+		fmt.Println("Successor: ", node.successor)
+	} else {
+		fmt.Println("Successor: <nil>")
+	}
+	fmt.Println("Self: ", node.address)
+	if node.predecessor != "" {
+		fmt.Println("Predecessor: ", node.predecessor)
+	} else {
+		fmt.Println("Predecessor: <nil>")
+	}
+}
+
+func (node *Node) stabilize() {
+	var junk Nothing
+	var successorPredecessorAddress string
+	for {
+		if node.successor != "" {
+			call(node.successor, "Node.GetPredecessor", junk, &successorPredecessorAddress)
+			if successorPredecessorAddress > node.address {
+				node.successor = successorPredecessorAddress
+			}
+			call(node.successor, "Node.Notify", node.address, &junk)
+		}
+		if node.successor == "" && node.predecessor != "" {
+			node.successor = node.predecessor
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// TODO: move these two functions to places that make sense
+
+// GetPredecessor : return's node.predecessor
+func (node *Node) GetPredecessor(junk Nothing, predecessorAddress *string) error {
+	*predecessorAddress = node.predecessor
+	return nil
+}
+
+// Notify : Inform a node about a change in it's predecessor
+func (node *Node) Notify(predecessorAddress string, junk *Nothing) error {
+	if node.predecessor == "" || predecessorAddress >= node.predecessor {
+		node.predecessor = predecessorAddress
+	}
+	return nil
 }
 
 func put(key, value string) {
@@ -223,18 +275,14 @@ func put(key, value string) {
 	inputs := KeyValuePair{key, value}
 	var junk *Nothing
 
-	if err := call("localhost:3410", "Node.Put", inputs, &junk); err != nil {
-		log.Fatalf("Error in 'call' function in the 'put' command: %v", err)
-	}
+	call("localhost:3410", "Node.Put", inputs, &junk)
 }
 
 func get(key string) {
 	fmt.Printf("Retrieving %s from the server\n", key)
 
 	var value string
-	if err := call("localhost:3410", "Node.Get", key, &value); err != nil {
-		log.Fatalf("Error retrieving %s: %v", key, err)
-	}
+	call("localhost:3410", "Node.Get", key, &value)
 
 	fmt.Println(value)
 }
@@ -243,7 +291,5 @@ func deleteKeyValuePair(key string) {
 	fmt.Printf("Deleting %s from the server\n", key)
 
 	var junk Nothing
-	if err := call("localhost:3410", "Node.Delete", key, &junk); err != nil {
-		log.Fatalf("Error deleting %s: %v", key, err)
-	}
+	call("localhost:3410", "Node.Delete", key, &junk)
 }
